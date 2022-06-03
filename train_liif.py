@@ -36,6 +36,7 @@ import models
 import utils
 from test import eval_psnr
 
+device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 def make_data_loader(spec, tag=''):
     if spec is None:
@@ -62,7 +63,7 @@ def make_data_loaders():
 def prepare_training():
     if config.get('resume') is not None:
         sv_file = torch.load(config['resume'])
-        model = models.make(sv_file['model'], load_sd=True).cuda()
+        model = models.make(sv_file['model'], load_sd=True).to(device)
         optimizer = utils.make_optimizer(
             model.parameters(), sv_file['optimizer'], load_sd=True)
         epoch_start = sv_file['epoch'] + 1
@@ -73,7 +74,7 @@ def prepare_training():
         for _ in range(epoch_start - 1):
             lr_scheduler.step()
     else:
-        model = models.make(config['model']).cuda()
+        model = models.make(config['model']).to(device)
         optimizer = utils.make_optimizer(
             model.parameters(), config['optimizer'])
         epoch_start = 1
@@ -93,15 +94,15 @@ def train(train_loader, model, optimizer):
 
     data_norm = config['data_norm']
     t = data_norm['inp']
-    inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).cuda()
+    inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).to(device)
+    inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).to(device)
     t = data_norm['gt']
-    gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).cuda()
+    gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).to(device)
+    gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).to(device)
 
     for batch in tqdm(train_loader, leave=False, desc='train'):
         for k, v in batch.items():
-            batch[k] = v.cuda()
+            batch[k] = v.to(device)
 
         inp = (batch['inp'] - inp_sub) / inp_div
         pred = model(inp, batch['coord'], batch['cell'])
@@ -214,7 +215,8 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default='0')
     args = parser.parse_args()
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    # os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)

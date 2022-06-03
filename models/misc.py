@@ -6,6 +6,7 @@ import models
 from models import register
 from utils import make_coord
 
+device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 @register('metasr')
 class MetaSR(nn.Module):
@@ -33,7 +34,7 @@ class MetaSR(nn.Module):
         feat = F.unfold(feat, 3, padding=1).view(
             feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3])
 
-        feat_coord = make_coord(feat.shape[-2:], flatten=False).cuda()
+        feat_coord = make_coord(feat.shape[-2:], flatten=False).to(device)
         feat_coord[:, :, 0] -= (2 / feat.shape[-2]) / 2
         feat_coord[:, :, 1] -= (2 / feat.shape[-1]) / 2
         feat_coord = feat_coord.permute(2, 0, 1) \

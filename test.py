@@ -12,6 +12,7 @@ import datasets
 import models
 import utils
 
+device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 def batched_predict(model, inp, coord, cell, bsize):
     with torch.no_grad():
@@ -38,11 +39,11 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
             'gt': {'sub': [0], 'div': [1]}
         }
     t = data_norm['inp']
-    inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).cuda()
+    inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).to(device)
+    inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).to(device)
     t = data_norm['gt']
-    gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).cuda()
+    gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).to(device)
+    gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).to(device)
 
     if eval_type is None:
         metric_fn = utils.calc_psnr
@@ -60,7 +61,7 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
     pbar = tqdm(loader, leave=False, desc='val')
     for batch in pbar:
         for k, v in batch.items():
-            batch[k] = v.cuda()
+            batch[k] = v.to(device)
 
         inp = (batch['inp'] - inp_sub) / inp_div
         if eval_bsize is None:
@@ -97,7 +98,8 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default='0')
     args = parser.parse_args()
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    # os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -109,7 +111,7 @@ if __name__ == '__main__':
         num_workers=8, pin_memory=True)
 
     model_spec = torch.load(args.model)['model']
-    model = models.make(model_spec, load_sd=True).cuda()
+    model = models.make(model_spec, load_sd=True).to(device)
 
     res = eval_psnr(loader, model,
         data_norm=config.get('data_norm'),
