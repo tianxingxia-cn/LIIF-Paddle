@@ -3,31 +3,42 @@
 import math
 from argparse import Namespace
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 
 from models import register
 
 
 def default_conv(in_channels, out_channels, kernel_size, bias=True):
-    return nn.Conv2d(
+    # return nn.Conv2D(
+    #     in_channels, out_channels, kernel_size,
+    #     padding=(kernel_size//2), bias=bias)
+    return nn.Conv2D(
         in_channels, out_channels, kernel_size,
-        padding=(kernel_size//2), bias=bias)
+        padding=(kernel_size // 2), bias_attr=bias)
 
-class MeanShift(nn.Conv2d):
+
+
+class MeanShift(nn.Conv2D):
     def __init__(
         self, rgb_range,
         rgb_mean=(0.4488, 0.4371, 0.4040), rgb_std=(1.0, 1.0, 1.0), sign=-1):
 
         super(MeanShift, self).__init__(3, 3, kernel_size=1)
-        std = torch.Tensor(rgb_std)
-        self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
-        self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
+        # std = torch.Tensor(rgb_std)
+        std = paddle.to_tensor(rgb_std)
+        # self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
+        self.weight.data = paddle.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
+        # self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
+        self.bias.data = sign * rgb_range * paddle.to_tensor(rgb_mean) / std
         for p in self.parameters():
             p.requires_grad = False
 
-class ResBlock(nn.Module):
+class ResBlock(nn.Layer):
     def __init__(
         self, conv, n_feats, kernel_size,
         bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
@@ -89,7 +100,7 @@ url = {
     'r32f256x4': 'https://cv.snu.ac.kr/research/EDSR/models/edsr_x4-4f62e9ef.pt'
 }
 
-class EDSR(nn.Module):
+class EDSR(nn.Layer):
     def __init__(self, args, conv=default_conv):
         super(EDSR, self).__init__()
         self.args = args

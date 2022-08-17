@@ -3,9 +3,9 @@ import time
 import shutil
 import math
 
-import torch
+import paddle    #import torch
 import numpy as np
-from torch.optim import SGD, Adam
+# from torch.optim import SGD, Adam
 from tensorboardX import SummaryWriter
 
 
@@ -89,13 +89,30 @@ def compute_num_params(model, text=False):
 
 
 def make_optimizer(param_list, optimizer_spec, load_sd=False):
+    # Optimizer = {
+    #     'sgd': SGD,
+    #     'adam': Adam
+    # }[optimizer_spec['name']]
+    # optimizer = Optimizer(param_list, **optimizer_spec['args'])
+    # if load_sd:
+    #     optimizer.load_state_dict(optimizer_spec['sd'])
+    # return optimizer
+
     Optimizer = {
-        'sgd': SGD,
-        'adam': Adam
+        'sgd': paddle.optimizer.SGD,
+        'adam': paddle.optimizer.Adam
     }[optimizer_spec['name']]
-    optimizer = Optimizer(param_list, **optimizer_spec['args'])
+    optimizer = Optimizer(parameters=param_list, learning_rate=optimizer_spec['args']['lr'])
     if load_sd:
         optimizer.load_state_dict(optimizer_spec['sd'])
+
+    # if optimizer_spec['name'] == 'adam':
+    #     optimizer = paddle.optimizer.Adam(learning_rate=optimizer_spec['args']['lr'], beta1=0.9, parameters=param_list)
+    # elif optimizer_spec['name'] == 'sgd':
+    #     optimizer = paddle.optimizer.SGD(learning_rate=optimizer_spec['args']['lr'], parameters=param_list)
+    # if load_sd:
+    #     optimizer.state_dict(optimizer_spec['sd'])
+
     return optimizer
 
 
@@ -109,11 +126,14 @@ def make_coord(shape, ranges=None, flatten=True):
         else:
             v0, v1 = ranges[i]
         r = (v1 - v0) / (2 * n)
-        seq = v0 + r + (2 * r) * torch.arange(n).float()
+        # seq = v0 + r + (2 * r) * torch.arange(n).float()
+        seq = v0 + r + (2 * r) * paddle.arange(n).astype(np.float32)
         coord_seqs.append(seq)
-    ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+    # ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+    ret = paddle.stack(paddle.meshgrid(*coord_seqs), axis=-1)
     if flatten:
-        ret = ret.view(-1, ret.shape[-1])
+        # ret = ret.view(-1, ret.shape[-1])
+        ret = paddle.reshape(ret, [-1, ret.shape[-1]])
     return ret
 
 
@@ -121,8 +141,15 @@ def to_pixel_samples(img):
     """ Convert the image to coord-RGB pairs.
         img: Tensor, (3, H, W)
     """
+    # print('img.shape[-2:]')
+    # print(img.shape[-2:])
     coord = make_coord(img.shape[-2:])
-    rgb = img.view(3, -1).permute(1, 0)
+    # print('coord')
+    # print(coord.shape)
+    # rgb = img.view(3, -1).permute(1, 0)
+    rgb = paddle.transpose(paddle.reshape(img, [3, -1]), perm=[1, 0])
+    # print('rgb')
+    # print(rgb.shape)
     return coord, rgb
 
 
@@ -133,8 +160,11 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
             shave = scale
             if diff.size(1) > 1:
                 gray_coeffs = [65.738, 129.057, 25.064]
-                convert = diff.new_tensor(gray_coeffs).view(1, 3, 1, 1) / 256
-                diff = diff.mul(convert).sum(dim=1)
+                # convert = diff.new_tensor(gray_coeffs).view(1, 3, 1, 1) / 256
+                diff = paddle.to_tensor(gray_coeffs)
+                convert = paddle.reshape(diff, shape=[1, 3, 1, 1]) / 256
+                # diff = diff.mul(convert).sum(dim=1)
+                diff = diff.multiply(convert).sum(axis=1)
         elif dataset == 'div2k':
             shave = scale + 6
         else:
@@ -143,4 +173,5 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
     else:
         valid = diff
     mse = valid.pow(2).mean()
-    return -10 * torch.log10(mse)
+    # return -10 * torch.log10(mse)
+    return -10 * paddle.log10(mse)

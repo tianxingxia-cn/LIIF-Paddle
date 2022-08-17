@@ -1,15 +1,19 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 
 import models
 from models import register
 from utils import make_coord
 
-device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+# device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+device = paddle.get_device()
 
 @register('metasr')
-class MetaSR(nn.Module):
+class MetaSR(nn.Layer):
 
     def __init__(self, encoder_spec):
         super().__init__()
@@ -31,10 +35,13 @@ class MetaSR(nn.Module):
 
     def query_rgb(self, coord, cell=None):
         feat = self.feat
-        feat = F.unfold(feat, 3, padding=1).view(
-            feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3])
+        # feat = F.unfold(feat, 3, padding=1).view(
+        #     feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3])
+        feat = F.unfold(feat, 3, paddings=1).reshape(
+            [feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3]])
 
-        feat_coord = make_coord(feat.shape[-2:], flatten=False).to(device)
+        # feat_coord = make_coord(feat.shape[-2:], flatten=False).to(device)
+        feat_coord = make_coord(feat.shape[-2:], flatten=False)
         feat_coord[:, :, 0] -= (2 / feat.shape[-2]) / 2
         feat_coord[:, :, 1] -= (2 / feat.shape[-1]) / 2
         feat_coord = feat_coord.permute(2, 0, 1) \
@@ -58,12 +65,16 @@ class MetaSR(nn.Module):
         rel_coord[:, :, 1] *= feat.shape[-1] / 2
 
         r_rev = cell[:, :, 0] * (feat.shape[-2] / 2)
-        inp = torch.cat([rel_coord, r_rev.unsqueeze(-1)], dim=-1)
+        # inp = torch.cat([rel_coord, r_rev.unsqueeze(-1)], dim=-1)
+        inp = paddle.concat([rel_coord, r_rev.unsqueeze(-1)], axis=-1)
 
         bs, q = coord.shape[:2]
-        pred = self.imnet(inp.view(bs * q, -1)).view(bs * q, feat.shape[1], 3)
-        pred = torch.bmm(q_feat.contiguous().view(bs * q, 1, -1), pred)
-        pred = pred.view(bs, q, 3)
+        # pred = self.imnet(inp.view(bs * q, -1)).view(bs * q, feat.shape[1], 3)
+        pred = self.imnet(inp.reshape([bs * q, -1])).reshape([bs * q, feat.shape[1], 3])
+        # pred = torch.bmm(q_feat.contiguous().view(bs * q, 1, -1), pred)
+        pred = paddle.bmm(q_feat.reshape([bs * q, 1, -1]), pred)
+        # pred = pred.view(bs, q, 3)
+        pred = pred.reshape([bs, q, 3])
         return pred
 
     def forward(self, inp, coord, cell):

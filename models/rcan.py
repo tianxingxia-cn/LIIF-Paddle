@@ -1,24 +1,27 @@
 import math
 from argparse import Namespace
 
-import torch
-import torch.nn as nn
+# import torch
+# import torch.nn as nn
+import paddle
+import paddle.nn as nn
 
 from models import register
 
 
 def default_conv(in_channels, out_channels, kernel_size, bias=True):
-    return nn.Conv2d(
+    return nn.Conv2D(
         in_channels, out_channels, kernel_size,
-        padding=(kernel_size//2), bias=bias)
+        padding=(kernel_size//2), bias_attr=bias)
 
-class MeanShift(nn.Conv2d):
+
+class MeanShift(nn.Conv2D):
     def __init__(self, rgb_range, rgb_mean, rgb_std, sign=-1):
         super(MeanShift, self).__init__(3, 3, kernel_size=1)
-        std = torch.Tensor(rgb_std)
-        self.weight.data = torch.eye(3).view(3, 3, 1, 1)
+        std = paddle.to_tensor(rgb_std)
+        self.weight.data = paddle.eye(3).view(3, 3, 1, 1)
         self.weight.data.div_(std.view(3, 1, 1, 1))
-        self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean)
+        self.bias.data = sign * rgb_range * paddle.to_tensor(rgb_mean)
         self.bias.data.div_(std)
         self.requires_grad = False
 
@@ -43,16 +46,16 @@ class Upsampler(nn.Sequential):
         super(Upsampler, self).__init__(*m)
 
 ## Channel Attention (CA) Layer
-class CALayer(nn.Module):
+class CALayer(nn.Layer):
     def __init__(self, channel, reduction=16):
         super(CALayer, self).__init__()
         # global average pooling: feature --> point
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         # feature channel downscale and upscale --> channel weight
         self.conv_du = nn.Sequential(
-                nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
+                nn.Conv2D(channel, channel // reduction, 1, padding=0, bias_attr=True),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
+                nn.Conv2D(channel // reduction, channel, 1, padding=0, bias_attr=True),
                 nn.Sigmoid()
         )
 
@@ -62,7 +65,7 @@ class CALayer(nn.Module):
         return x * y
 
 ## Residual Channel Attention Block (RCAB)
-class RCAB(nn.Module):
+class RCAB(nn.Layer):
     def __init__(
         self, conv, n_feat, kernel_size, reduction,
         bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
@@ -84,7 +87,7 @@ class RCAB(nn.Module):
         return res
 
 ## Residual Group (RG)
-class ResidualGroup(nn.Module):
+class ResidualGroup(nn.Layer):
     def __init__(self, conv, n_feat, kernel_size, reduction, act, res_scale, n_resblocks):
         super(ResidualGroup, self).__init__()
         modules_body = []
@@ -101,7 +104,7 @@ class ResidualGroup(nn.Module):
         return res
 
 ## Residual Channel Attention Network (RCAN)
-class RCAN(nn.Module):
+class RCAN(nn.Layer):
     def __init__(self, args, conv=default_conv):
         super(RCAN, self).__init__()
         self.args = args

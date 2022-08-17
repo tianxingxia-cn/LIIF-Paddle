@@ -4,10 +4,12 @@ import math
 from PIL import Image
 
 import numpy as np
-import torch
-from torch.utils.data import Dataset
-from torchvision import transforms
-
+# import torch
+# from torch.utils.data import Dataset
+# from torchvision import transforms
+import paddle
+from paddle.io import Dataset
+from paddle.vision import transforms
 from datasets import register
 from utils import to_pixel_samples
 
@@ -59,7 +61,8 @@ class SRImplicitPaired(Dataset):
             crop_lr = augment(crop_lr)
             crop_hr = augment(crop_hr)
 
-        hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
+        # hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
+        hr_coord, hr_rgb = to_pixel_samples(crop_hr.clone().reshape(crop_hr.shape))
 
         if self.sample_q is not None:
             sample_lst = np.random.choice(
@@ -67,7 +70,8 @@ class SRImplicitPaired(Dataset):
             hr_coord = hr_coord[sample_lst]
             hr_rgb = hr_rgb[sample_lst]
 
-        cell = torch.ones_like(hr_coord)
+        # cell = torch.ones_like(hr_coord)
+        cell = paddle.ones_like(hr_coord)
         cell[:, 0] *= 2 / crop_hr.shape[-2]
         cell[:, 1] *= 2 / crop_hr.shape[-1]
 
@@ -80,9 +84,26 @@ class SRImplicitPaired(Dataset):
 
 
 def resize_fn(img, size):
-    return transforms.ToTensor()(
-        transforms.Resize(size, Image.BICUBIC)(
-            transforms.ToPILImage()(img)))
+    # print(img.shape)
+    # print(size)
+    # return transforms.ToTensor()(
+    #     transforms.Resize(size, Image.BICUBIC)(
+    #         transforms.ToPILImage()(img)))
+    # img = img.numpy()
+    # a = img.numpy()
+    # print(a)
+    # b = np.uint8(a * 255)
+    # print(b)
+    # c = b.transpose(1, 2, 0)
+    # print(c)
+    # d = Image.fromarray(c).convert('RGB')
+    # pil_img = d
+
+    pil_img = Image.fromarray(np.uint8(img.numpy() * 255).transpose(1, 2, 0)).convert('RGB')
+    pil_img_resize = pil_img.resize((size, size))
+    # pil_img_resize.show()
+    return paddle.vision.transforms.ToTensor(data_format='CHW')(pil_img_resize)
+
 
 
 @register('sr-implicit-downsampled')
@@ -104,12 +125,13 @@ class SRImplicitDownsampled(Dataset):
 
     def __getitem__(self, idx):
         img = self.dataset[idx]
-        s = random.uniform(self.scale_min, self.scale_max)
+        # s = random.uniform(self.scale_min, self.scale_max)
+        s = (self.scale_max - self.scale_min) / 2  # todo 本行为测试需要删除，
 
         if self.inp_size is None:
             h_lr = math.floor(img.shape[-2] / s + 1e-9)
             w_lr = math.floor(img.shape[-1] / s + 1e-9)
-            img = img[:, :round(h_lr * s), :round(w_lr * s)] # assume round int
+            img = img[:, :round(h_lr * s), :round(w_lr * s)]    # assume round int
             img_down = resize_fn(img, (h_lr, w_lr))
             crop_lr, crop_hr = img_down, img
         else:
@@ -120,6 +142,8 @@ class SRImplicitDownsampled(Dataset):
             crop_hr = img[:, x0: x0 + w_hr, y0: y0 + w_hr]
             crop_lr = resize_fn(crop_hr, w_lr)
 
+        # print('crop_lr:')
+        # print(crop_lr)
         if self.augment:
             hflip = random.random() < 0.5
             vflip = random.random() < 0.5
@@ -127,25 +151,49 @@ class SRImplicitDownsampled(Dataset):
 
             def augment(x):
                 if hflip:
-                    x = x.flip(-2)
+                    # x = x.flip(-2)
+                    # x = paddle.flip(x, [-2])
+                    x = x.flip([-2])
                 if vflip:
-                    x = x.flip(-1)
+                    # x = x.flip(-1)
+                    # x = paddle.flip(x, [-1])
+                    x = x.flip([-1])
                 if dflip:
-                    x = x.transpose(-2, -1)
+                    # print('x.shape')
+                    # print(x.shape)
+                    # x = x.transpose(-2, -1)  # torch.Size([3, 48, 48])
+                    paddle.transpose(img, perm=[0, 2, 1])
+
+                    # print("x:")
+                    # print(x)
                 return x
 
             crop_lr = augment(crop_lr)
             crop_hr = augment(crop_hr)
 
-        hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
-
+        # hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
+        hr_coord, hr_rgb = to_pixel_samples(crop_hr.clone())
+        # print(hr_coord, hr_rgb)
         if self.sample_q is not None:
+            # print('len')
+            # print(len(hr_coord))
+            # print('self.sample_q')
+            # print(self.sample_q)
             sample_lst = np.random.choice(
                 len(hr_coord), self.sample_q, replace=False)
-            hr_coord = hr_coord[sample_lst]
-            hr_rgb = hr_rgb[sample_lst]
+            # print("sample_lst\n")
+            # print(sample_lst)
+            # print('sample_lst长度 %d' % len(sample_lst))
+            # print(hr_coord)
+            # hr_coord = hr_coord[sample_lst]
+            hr_coord = hr_coord.gather(paddle.to_tensor(sample_lst))
+            # print('hr_coord')
+            # print(hr_coord)
+            # hr_rgb = hr_rgb[sample_lst]
+            hr_rgb = hr_rgb.gather(paddle.to_tensor(sample_lst))
 
-        cell = torch.ones_like(hr_coord)
+        # cell = torch.ones_like(hr_coord)
+        cell = paddle.ones_like(hr_coord)
         cell[:, 0] *= 2 / crop_hr.shape[-2]
         cell[:, 1] *= 2 / crop_hr.shape[-1]
 
@@ -196,7 +244,8 @@ class SRImplicitUniformVaried(Dataset):
             hr_coord = hr_coord[sample_lst]
             hr_rgb = hr_rgb[sample_lst]
 
-        cell = torch.ones_like(hr_coord)
+        # cell = torch.ones_like(hr_coord)
+        cell = paddle.ones_like(hr_coord)
         cell[:, 0] *= 2 / img_hr.shape[-2]
         cell[:, 1] *= 2 / img_hr.shape[-1]
 

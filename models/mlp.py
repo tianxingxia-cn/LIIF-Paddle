@@ -1,10 +1,11 @@
-import torch.nn as nn
+# import torch.nn as nn
+import paddle.nn as nn
 
 from models import register
 
 
 @register('mlp')
-class MLP(nn.Module):
+class MLP(nn.Layer):
 
     def __init__(self, in_dim, out_dim, hidden_list):
         super().__init__()
@@ -19,5 +20,7 @@ class MLP(nn.Module):
 
     def forward(self, x):
         shape = x.shape[:-1]
-        x = self.layers(x.view(-1, x.shape[-1]))
-        return x.view(*shape, -1)
+        # x = self.layers(x.view(-1, x.shape[-1]))
+        x = self.layers(x.reshape([-1, x.shape[-1]]))
+        # return x.view(*shape, -1)
+        return x.reshape([*shape, -1])

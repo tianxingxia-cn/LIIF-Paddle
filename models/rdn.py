@@ -4,27 +4,30 @@
 
 from argparse import Namespace
 
-import torch
-import torch.nn as nn
+# import torch
+# import torch.nn as nn
+import paddle
+import paddle.nn as nn
 
 from models import register
 
 
-class RDB_Conv(nn.Module):
+class RDB_Conv(nn.Layer):
     def __init__(self, inChannels, growRate, kSize=3):
         super(RDB_Conv, self).__init__()
         Cin = inChannels
         G  = growRate
         self.conv = nn.Sequential(*[
-            nn.Conv2d(Cin, G, kSize, padding=(kSize-1)//2, stride=1),
+            nn.Conv2D(Cin, G, kSize, padding=(kSize - 1) // 2, stride=1),
             nn.ReLU()
         ])
 
     def forward(self, x):
         out = self.conv(x)
-        return torch.cat((x, out), 1)
+        # return torch.cat((x, out), 1)
+        return paddle.concat((x, out), 1)
 
-class RDB(nn.Module):
+class RDB(nn.Layer):
     def __init__(self, growRate0, growRate, nConvLayers, kSize=3):
         super(RDB, self).__init__()
         G0 = growRate0
@@ -37,12 +40,12 @@ class RDB(nn.Module):
         self.convs = nn.Sequential(*convs)
 
         # Local Feature Fusion
-        self.LFF = nn.Conv2d(G0 + C*G, G0, 1, padding=0, stride=1)
+        self.LFF = nn.Conv2D(G0 + C*G, G0, 1, padding=0, stride=1)
 
     def forward(self, x):
         return self.LFF(self.convs(x)) + x
 
-class RDN(nn.Module):
+class RDN(nn.Layer):
     def __init__(self, args):
         super(RDN, self).__init__()
         self.args = args
@@ -57,11 +60,12 @@ class RDN(nn.Module):
         }[args.RDNconfig]
 
         # Shallow feature extraction net
-        self.SFENet1 = nn.Conv2d(args.n_colors, G0, kSize, padding=(kSize-1)//2, stride=1)
-        self.SFENet2 = nn.Conv2d(G0, G0, kSize, padding=(kSize-1)//2, stride=1)
+        self.SFENet1 = nn.Conv2D(args.n_colors, G0, kSize, padding=(kSize-1)//2, stride=1)
+        self.SFENet2 = nn.Conv2D(G0, G0, kSize, padding=(kSize-1)//2, stride=1)
 
         # Redidual dense blocks and dense feature fusion
-        self.RDBs = nn.ModuleList()
+        # self.RDBs = nn.ModuleList()
+        self.RDBs = nn.LayerList()
         for i in range(self.D):
             self.RDBs.append(
                 RDB(growRate0 = G0, growRate = G, nConvLayers = C)
@@ -69,8 +73,8 @@ class RDN(nn.Module):
 
         # Global Feature Fusion
         self.GFF = nn.Sequential(*[
-            nn.Conv2d(self.D * G0, G0, 1, padding=0, stride=1),
-            nn.Conv2d(G0, G0, kSize, padding=(kSize-1)//2, stride=1)
+            nn.Conv2D(self.D * G0, G0, 1, padding=0, stride=1),
+            nn.Conv2D(G0, G0, kSize, padding=(kSize-1)//2, stride=1)
         ])
 
         if args.no_upsampling:
@@ -80,17 +84,17 @@ class RDN(nn.Module):
             # Up-sampling net
             if r == 2 or r == 3:
                 self.UPNet = nn.Sequential(*[
-                    nn.Conv2d(G0, G * r * r, kSize, padding=(kSize-1)//2, stride=1),
+                    nn.Conv2D(G0, G * r * r, kSize, padding=(kSize-1)//2, stride=1),
                     nn.PixelShuffle(r),
-                    nn.Conv2d(G, args.n_colors, kSize, padding=(kSize-1)//2, stride=1)
+                    nn.Conv2D(G, args.n_colors, kSize, padding=(kSize-1)//2, stride=1)
                 ])
             elif r == 4:
                 self.UPNet = nn.Sequential(*[
-                    nn.Conv2d(G0, G * 4, kSize, padding=(kSize-1)//2, stride=1),
+                    nn.Conv2D(G0, G * 4, kSize, padding=(kSize-1)//2, stride=1),
                     nn.PixelShuffle(2),
-                    nn.Conv2d(G, G * 4, kSize, padding=(kSize-1)//2, stride=1),
+                    nn.Conv2D(G, G * 4, kSize, padding=(kSize-1)//2, stride=1),
                     nn.PixelShuffle(2),
-                    nn.Conv2d(G, args.n_colors, kSize, padding=(kSize-1)//2, stride=1)
+                    nn.Conv2D(G, args.n_colors, kSize, padding=(kSize-1)//2, stride=1)
                 ])
             else:
                 raise ValueError("scale must be 2 or 3 or 4.")
@@ -104,7 +108,8 @@ class RDN(nn.Module):
             x = self.RDBs[i](x)
             RDBs_out.append(x)
 
-        x = self.GFF(torch.cat(RDBs_out,1))
+        # x = self.GFF(torch.cat(RDBs_out,1))
+        x = self.GFF(paddle.concat(RDBs_out, 1))
         x += f__1
 
         if self.args.no_upsampling:

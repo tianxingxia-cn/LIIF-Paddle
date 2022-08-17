@@ -5,9 +5,12 @@ from PIL import Image
 import pickle
 import imageio
 import numpy as np
-import torch
-from torch.utils.data import Dataset
-from torchvision import transforms
+# import torch
+# from torch.utils.data import Dataset
+# from torchvision import transforms
+import paddle
+from paddle.io import Dataset
+from paddle.vision import transforms
 
 from datasets import register
 
@@ -66,7 +69,8 @@ class ImageFolder(Dataset):
             with open(x, 'rb') as f:
                 x = pickle.load(f)
             x = np.ascontiguousarray(x.transpose(2, 0, 1))
-            x = torch.from_numpy(x).float() / 255
+            # x = torch.from_numpy(x).float() / 255
+            x = paddle.to_tensor(x).astype(np.float32) / 255
             return x
 
         elif self.cache == 'in_memory':

@@ -1,15 +1,18 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 
 import models
 from models import register
 from utils import make_coord
 
-device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+# device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 @register('liif')
-class LIIF(nn.Module):
+class LIIF(nn.Layer):
 
     def __init__(self, encoder_spec, imnet_spec=None,
                  local_ensemble=True, feat_unfold=True, cell_decode=True):
@@ -39,14 +42,17 @@ class LIIF(nn.Module):
         feat = self.feat
 
         if self.imnet is None:
+            # ret = F.grid_sample(feat, coord.flip(-1).unsqueeze(1),
+            #     mode='nearest', align_corners=False)[:, :, 0, :] \
+            #     .permute(0, 2, 1)
             ret = F.grid_sample(feat, coord.flip(-1).unsqueeze(1),
-                mode='nearest', align_corners=False)[:, :, 0, :] \
-                .permute(0, 2, 1)
+                                mode='nearest', align_corners=False)[:, :, 0, :].transpose(perm=[0, 2, 1])
             return ret
 
         if self.feat_unfold:
-            feat = F.unfold(feat, 3, padding=1).view(
-                feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3])
+            # feat = F.unfold(feat, 3, padding=1).view(
+            #     feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3])
+            feat = F.unfold(feat, 3, paddings=1).reshape([feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3]])
 
         if self.local_ensemble:
             vx_lst = [-1, 1]
@@ -59,8 +65,11 @@ class LIIF(nn.Module):
         rx = 2 / feat.shape[-2] / 2
         ry = 2 / feat.shape[-1] / 2
 
-        feat_coord = make_coord(feat.shape[-2:], flatten=False).to(device) \
-            .permute(2, 0, 1) \
+        # feat_coord = make_coord(feat.shape[-2:], flatten=False).to(device) \
+        #     .permute(2, 0, 1) \
+        #     .unsqueeze(0).expand(feat.shape[0], 2, *feat.shape[-2:])
+        feat_coord = make_coord(feat.shape[-2:], flatten=False) \
+            .transpose(perm=[2, 0, 1]) \
             .unsqueeze(0).expand(feat.shape[0], 2, *feat.shape[-2:])
 
         preds = []
@@ -82,22 +91,27 @@ class LIIF(nn.Module):
                 rel_coord = coord - q_coord
                 rel_coord[:, :, 0] *= feat.shape[-2]
                 rel_coord[:, :, 1] *= feat.shape[-1]
-                inp = torch.cat([q_feat, rel_coord], dim=-1)
+                # inp = torch.cat([q_feat, rel_coord], dim=-1)
+                inp = paddle.concat([q_feat, rel_coord], axis=-1)
 
                 if self.cell_decode:
                     rel_cell = cell.clone()
                     rel_cell[:, :, 0] *= feat.shape[-2]
                     rel_cell[:, :, 1] *= feat.shape[-1]
-                    inp = torch.cat([inp, rel_cell], dim=-1)
+                    # inp = torch.cat([inp, rel_cell], dim=-1)
+                    inp = paddle.concat([inp, rel_cell], axis=-1)
 
                 bs, q = coord.shape[:2]
-                pred = self.imnet(inp.view(bs * q, -1)).view(bs, q, -1)
+                # pred = self.imnet(inp.view(bs * q, -1)).view(bs, q, -1)
+                pred = self.imnet(inp.reshape([bs * q, -1])).reshape([bs, q, -1])
                 preds.append(pred)
 
-                area = torch.abs(rel_coord[:, :, 0] * rel_coord[:, :, 1])
+                # area = torch.abs(rel_coord[:, :, 0] * rel_coord[:, :, 1])
+                area = paddle.abs(rel_coord[:, :, 0] * rel_coord[:, :, 1])
                 areas.append(area + 1e-9)
 
-        tot_area = torch.stack(areas).sum(dim=0)
+        # tot_area = torch.stack(areas).sum(dim=0)
+        tot_area = paddle.stack(areas).sum(dim=0)
         if self.local_ensemble:
             t = areas[0]; areas[0] = areas[3]; areas[3] = t
             t = areas[1]; areas[1] = areas[2]; areas[2] = t
