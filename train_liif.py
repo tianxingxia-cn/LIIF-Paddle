@@ -23,27 +23,25 @@
 
 import argparse
 import os
-import yaml
+
 import paddle  # import torch
 import paddle.nn as nn  # import torch.nn as nn
-from tqdm import tqdm
+import yaml
 from paddle.io import DataLoader  # from torch.utils.data import DataLoader
-# from torch.optim.lr_scheduler import MultiStepLR
+from tqdm import tqdm
 
 import datasets
 import models
 import utils
 from test import eval_psnr
+# from torch.optim.lr_scheduler import MultiStepLR
 
 # device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 device = paddle.get_device()
 # print(device)
-
-
 os.environ['CUDA_VISIBLE_DEVICES'] = device.replace('gpu:', '')
-
-
 # os.environ["OMP_NUM_THREADS"] = "1"
+
 def make_data_loader(spec, tag=''):
     if spec is None:
         return None
