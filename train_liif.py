@@ -24,10 +24,10 @@
 import argparse
 import os
 import yaml
-import paddle   # import torch
+import paddle  # import torch
 import paddle.nn as nn  # import torch.nn as nn
 from tqdm import tqdm
-from paddle.io import DataLoader    # from torch.utils.data import DataLoader
+from paddle.io import DataLoader  # from torch.utils.data import DataLoader
 # from torch.optim.lr_scheduler import MultiStepLR
 
 import datasets
@@ -36,6 +36,12 @@ import utils
 from test import eval_psnr
 
 # device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+device = paddle.get_device()
+# print(device)
+
+
+os.environ['CUDA_VISIBLE_DEVICES'] = device.replace('gpu:', '')
+
 
 # os.environ["OMP_NUM_THREADS"] = "1"
 def make_data_loader(spec, tag=''):
@@ -44,13 +50,7 @@ def make_data_loader(spec, tag=''):
 
     dataset = datasets.make(spec['dataset'])
     dataset = datasets.make(spec['wrapper'], args={'dataset': dataset})
-    print('循环：dataset ')
-    print('{} dataset: size={}'.format(tag, len(dataset)))
     try:
-        print(dataset[1].items())
-        for k, v in dataset[0].items():
-            print('  {}: shape={}'.format(k, tuple(v.shape)))
-
         log('{} dataset: size={}'.format(tag, len(dataset)))
         for k, v in dataset[0].items():
             log('  {}: shape={}'.format(k, tuple(v.shape)))
@@ -60,8 +60,8 @@ def make_data_loader(spec, tag=''):
 
     # loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=(tag == 'train'), num_workers=8, pin_memory=True)
     # loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=(tag == 'train'), num_workers=4, pin_memory=True)
-
-    loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=False, num_workers=0)
+    # loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=(tag == 'train'), num_workers=0, use_shared_memory=True)
+    loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=False, num_workers=0, use_shared_memory=True)
     return loader
 
 
@@ -72,12 +72,16 @@ def make_data_loaders():
 
 
 def prepare_training():
-    if config.get('resume') is not None:
-        sv_file = paddle.load(config['resume'])     # sv_file = torch.load(config['resume'])
-        # model = models.make(sv_file['model'], load_sd=True).to(device
+    print('resume config:')
+    print(config.get('resume'))
+    if config.get('resume') is not None and os.path.exists(config['resume']):
+        sv_file = paddle.load(config['resume'])  # sv_file = torch.load(config['resume'])
+        # model = models.make(sv_file['model'], load_sd=True).to(device)
         model = models.make(sv_file['model'], load_sd=True)
         optimizer = utils.make_optimizer(
             model.parameters(), sv_file['optimizer'], load_sd=True)
+        print('epoch_resume:')
+        print(sv_file['epoch'])
         epoch_start = sv_file['epoch'] + 1
         if config.get('multi_step_lr') is None:
             lr_scheduler = None
@@ -91,9 +95,8 @@ def prepare_training():
             lr_scheduler.step()
     else:
         # model = models.make(config['model']).to(device)
-
-
         model = models.make(config['model'])
+
         optimizer = utils.make_optimizer(
             model.parameters(), config['optimizer'])
         epoch_start = 1
@@ -119,7 +122,7 @@ def train(train_loader, model, optimizer):
     t = data_norm['inp']
     # inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).to(device)
     # inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).to(device)
-    print('TODO: 判断是float32 还是 float64')
+    # print('TODO: 判断是float32 还是 float64')
     inp_sub = paddle.to_tensor(t['sub']).astype('float32').reshape([1, -1, 1, 1])
     inp_div = paddle.to_tensor(t['div']).astype('float32').reshape([1, -1, 1, 1])
     t = data_norm['gt']
@@ -131,16 +134,22 @@ def train(train_loader, model, optimizer):
         for k, v in batch.items():
             # batch[k] = v.to(device)
             batch[k] = v
-
+        # print(v)
         inp = (batch['inp'] - inp_sub) / inp_div
-        pred = model(inp, batch['coord'], batch['cell'])
-
+        # print("inp\n")
+        # print(inp)
+        # print("coord\n")
+        # print(batch['coord'])
+        # print("cell\n")
+        # print(batch['cell'])
+        pred = model(inp, batch['coord'], batch['cell'])  # rel: paddle.Model(net, input, label)
         gt = (batch['gt'] - gt_sub) / gt_div
         loss = loss_fn(pred, gt)
 
         train_loss.add(loss.item())
 
-        optimizer.zero_grad()
+        # optimizer.zero_grad()
+        optimizer.clear_grad()
         loss.backward()
         optimizer.step()
 
@@ -180,12 +189,14 @@ def main(config_, save_path):
     timer = utils.Timer()
 
     for epoch in range(epoch_start, epoch_max + 1):
-        print('epoch = %d' % epoch)
+        # print('epoch = %d' % epoch)
         t_epoch_start = timer.t()
         log_info = ['epoch {}/{}'.format(epoch, epoch_max)]
 
         # print(optimizer)
-        # writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)   //todo 本行未优化
+        # writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)   # todo 本行未优化
+        # writer.add_scalar('lr', optimizer.get_lr(), epoch)
+        writer.add_scalar(tag='train/lr', value=optimizer.get_lr(), step=epoch)
 
         train_loss = train(train_loader, model, optimizer)
 
@@ -193,7 +204,8 @@ def main(config_, save_path):
             lr_scheduler.step()
 
         log_info.append('train: loss={:.4f}'.format(train_loss))
-        writer.add_scalars('loss', {'train': train_loss}, epoch)
+        # writer.add_scalars('loss', {'train': train_loss}, epoch)
+        writer.add_scalar(tag='train/train_loss', value=train_loss, step=epoch)
 
         if n_gpus > 1:
             model_ = model.module
@@ -210,12 +222,10 @@ def main(config_, save_path):
         }
 
         # torch.save(sv_file, os.path.join(save_path, 'epoch-last.pth'))
-        # paddle.save(model.state_dict(), save_path+'epoch-last.pdparams')
-        paddle.save(sv_file, save_path + 'epoch-last.pdparams')  # checkpoint
+        paddle.save(sv_file, os.path.join(save_path, 'epoch-last.pdparams'))  # checkpoint
 
         if (epoch_save is not None) and (epoch % epoch_save == 0):
             # torch.save(sv_file, os.path.join(save_path, 'epoch-{}.pth'.format(epoch)))
-            # paddle.save(model.state_dict(), os.path.join(save_path, 'epoch-{}.pdparams'.format(epoch)))
             paddle.save(sv_file, os.path.join(save_path, 'epoch-{}.pdparams'.format(epoch)))
 
         if (epoch_val is not None) and (epoch % epoch_val == 0):
@@ -224,16 +234,16 @@ def main(config_, save_path):
             else:
                 model_ = model
             val_res = eval_psnr(val_loader, model_,
-                data_norm=config['data_norm'],
-                eval_type=config.get('eval_type'),
-                eval_bsize=config.get('eval_bsize'))
+                                data_norm=config['data_norm'],
+                                eval_type=config.get('eval_type'),
+                                eval_bsize=config.get('eval_bsize'))
 
             log_info.append('val: psnr={:.4f}'.format(val_res))
-            writer.add_scalars('psnr', {'val': val_res}, epoch)
+            # writer.add_scalars('psnr', {'val': val_res}, epoch)
+            writer.add_scalar(tag='val/psnr', value=val_res, step=epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
                 # torch.save(sv_file, os.path.join(save_path, 'epoch-best.pth'))
-                # paddle.save(model.state_dict(), os.path.join(save_path, 'epoch-best.pdparams'))
                 paddle.save(sv_file, os.path.join(save_path, 'epoch-best.pdparams'))
 
         t = timer.t()
@@ -243,7 +253,7 @@ def main(config_, save_path):
         log_info.append('{} {}/{}'.format(t_epoch, t_elapsed, t_all))
 
         log(', '.join(log_info))
-        writer.flush()
+        # writer.flush()
 
 
 if __name__ == '__main__':

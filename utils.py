@@ -3,10 +3,11 @@ import time
 import shutil
 import math
 
-import paddle    #import torch
+import paddle  # import torch
 import numpy as np
 # from torch.optim import SGD, Adam
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
+from visualdl import LogWriter
 
 
 class Averager():
@@ -53,7 +54,7 @@ def set_log_path(path):
 
 
 def log(obj, filename='log.txt'):
-    print(obj)
+    # print(obj)
     if _log_path is not None:
         with open(os.path.join(_log_path, filename), 'a') as f:
             print(obj, file=f)
@@ -63,17 +64,18 @@ def ensure_path(path, remove=True):
     basename = os.path.basename(path.rstrip('/'))
     if os.path.exists(path):
         if remove and (basename.startswith('_')
-                or input('{} exists, remove? (y/[n]): '.format(path)) == 'y'):
+                       or input('{} exists, remove? (y/[n]): '.format(path)) == 'y'):
             shutil.rmtree(path)
             os.makedirs(path)
     else:
         os.makedirs(path)
 
 
-def set_save_path(save_path, remove=True):
+def set_save_path(save_path, remove=False):
     ensure_path(save_path, remove=remove)
     set_log_path(save_path)
-    writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
+    # writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
+    writer = LogWriter(logdir=os.path.join(save_path, 'visualdl'))
     return log, writer
 
 
@@ -98,20 +100,23 @@ def make_optimizer(param_list, optimizer_spec, load_sd=False):
     #     optimizer.load_state_dict(optimizer_spec['sd'])
     # return optimizer
 
-    Optimizer = {
-        'sgd': paddle.optimizer.SGD,
-        'adam': paddle.optimizer.Adam
-    }[optimizer_spec['name']]
-    optimizer = Optimizer(parameters=param_list, learning_rate=optimizer_spec['args']['lr'])
-    if load_sd:
-        optimizer.load_state_dict(optimizer_spec['sd'])
-
-    # if optimizer_spec['name'] == 'adam':
-    #     optimizer = paddle.optimizer.Adam(learning_rate=optimizer_spec['args']['lr'], beta1=0.9, parameters=param_list)
-    # elif optimizer_spec['name'] == 'sgd':
-    #     optimizer = paddle.optimizer.SGD(learning_rate=optimizer_spec['args']['lr'], parameters=param_list)
+    # Optimizer = {
+    #     'sgd': paddle.optimizer.SGD,
+    #     'adam': paddle.optimizer.Adam
+    # }[optimizer_spec['name']]
+    # optimizer = Optimizer(parameters=param_list, learning_rate=optimizer_spec['args']['lr'])
     # if load_sd:
+    #     print('optimizer_state_dict:')
+    #     print(optimizer_spec['sd'])
     #     optimizer.state_dict(optimizer_spec['sd'])
+
+    if optimizer_spec['name'] == 'adam':
+        optimizer = paddle.optimizer.Adam(learning_rate=optimizer_spec['args']['lr'], beta1=0.9, parameters=param_list)
+    elif optimizer_spec['name'] == 'sgd':
+        optimizer = paddle.optimizer.SGD(learning_rate=optimizer_spec['args']['lr'], parameters=param_list)
+    if load_sd:
+        # optimizer.load_state_dict(optimizer_spec['sd'])
+        optimizer.set_state_dict(optimizer_spec['sd'])
 
     return optimizer
 

@@ -28,8 +28,7 @@ class SRImplicitPaired(Dataset):
 
     def __getitem__(self, idx):
         img_lr, img_hr = self.dataset[idx]
-
-        s = img_hr.shape[-2] // img_lr.shape[-2] # assume int scale
+        s = img_hr.shape[-2] // img_lr.shape[-2]  # assume int scale
         if self.inp_size is None:
             h_lr, w_lr = img_lr.shape[-2:]
             img_hr = img_hr[:, :h_lr * s, :w_lr * s]
@@ -38,6 +37,9 @@ class SRImplicitPaired(Dataset):
             w_lr = self.inp_size
             x0 = random.randint(0, img_lr.shape[-2] - w_lr)
             y0 = random.randint(0, img_lr.shape[-1] - w_lr)
+            # x0 = 0  # todo 临时测试 不随机裁剪
+            # y0 = 0
+
             crop_lr = img_lr[:, x0: x0 + w_lr, y0: y0 + w_lr]
             w_hr = w_lr * s
             x1 = x0 * s
@@ -67,8 +69,13 @@ class SRImplicitPaired(Dataset):
         if self.sample_q is not None:
             sample_lst = np.random.choice(
                 len(hr_coord), self.sample_q, replace=False)
-            hr_coord = hr_coord[sample_lst]
-            hr_rgb = hr_rgb[sample_lst]
+            # sample_lst=[]
+            # for k in range(self.sample_q):  #todo 临时测试
+            #     sample_lst.append(k)
+            # hr_coord = hr_coord[sample_lst]
+            hr_coord = hr_coord.gather(paddle.to_tensor(sample_lst))
+            # hr_rgb = hr_rgb[sample_lst]
+            hr_rgb = hr_rgb.gather(paddle.to_tensor(sample_lst))
 
         # cell = torch.ones_like(hr_coord)
         cell = paddle.ones_like(hr_coord)
@@ -105,7 +112,6 @@ def resize_fn(img, size):
     return paddle.vision.transforms.ToTensor(data_format='CHW')(pil_img_resize)
 
 
-
 @register('sr-implicit-downsampled')
 class SRImplicitDownsampled(Dataset):
 
@@ -125,13 +131,14 @@ class SRImplicitDownsampled(Dataset):
 
     def __getitem__(self, idx):
         img = self.dataset[idx]
-        # s = random.uniform(self.scale_min, self.scale_max)
-        s = (self.scale_max - self.scale_min) / 2  # todo 本行为测试需要删除，
+
+        s = random.uniform(self.scale_min, self.scale_max)
+        # s = self.scale_min #todo 临时测试
 
         if self.inp_size is None:
             h_lr = math.floor(img.shape[-2] / s + 1e-9)
             w_lr = math.floor(img.shape[-1] / s + 1e-9)
-            img = img[:, :round(h_lr * s), :round(w_lr * s)]    # assume round int
+            img = img[:, :round(h_lr * s), :round(w_lr * s)]  # assume round int
             img_down = resize_fn(img, (h_lr, w_lr))
             crop_lr, crop_hr = img_down, img
         else:
@@ -139,6 +146,8 @@ class SRImplicitDownsampled(Dataset):
             w_hr = round(w_lr * s)
             x0 = random.randint(0, img.shape[-2] - w_hr)
             y0 = random.randint(0, img.shape[-1] - w_hr)
+            # x0 = 0  #todo 临时测试
+            # y0 = 0
             crop_hr = img[:, x0: x0 + w_hr, y0: y0 + w_hr]
             crop_lr = resize_fn(crop_hr, w_lr)
 
@@ -172,7 +181,7 @@ class SRImplicitDownsampled(Dataset):
             crop_hr = augment(crop_hr)
 
         # hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
-        hr_coord, hr_rgb = to_pixel_samples(crop_hr.clone())
+        hr_coord, hr_rgb = to_pixel_samples(crop_hr.clone().reshape(crop_hr.shape))
         # print(hr_coord, hr_rgb)
         if self.sample_q is not None:
             # print('len')
@@ -181,6 +190,10 @@ class SRImplicitDownsampled(Dataset):
             # print(self.sample_q)
             sample_lst = np.random.choice(
                 len(hr_coord), self.sample_q, replace=False)
+            # sample_lst=[] #todo 临时测试
+            # for k in range(self.sample_q):  #todo 临时测试
+            #     sample_lst.append(k)
+
             # print("sample_lst\n")
             # print(sample_lst)
             # print('sample_lst长度 %d' % len(sample_lst))
@@ -241,8 +254,13 @@ class SRImplicitUniformVaried(Dataset):
         if self.sample_q is not None:
             sample_lst = np.random.choice(
                 len(hr_coord), self.sample_q, replace=False)
-            hr_coord = hr_coord[sample_lst]
-            hr_rgb = hr_rgb[sample_lst]
+            # sample_lst=[] #todo 临时测试
+            # for k in range(self.sample_q):  #todo 临时测试
+            #     sample_lst.append(k)
+            # hr_coord = hr_coord[sample_lst]
+            hr_coord = hr_coord.gather(paddle.to_tensor(sample_lst))
+            # hr_rgb = hr_rgb[sample_lst]
+            hr_rgb = hr_rgb.gather(paddle.to_tensor(sample_lst))
 
         # cell = torch.ones_like(hr_coord)
         cell = paddle.ones_like(hr_coord)

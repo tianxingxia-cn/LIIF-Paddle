@@ -81,7 +81,8 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
             pred = batched_predict(model, inp,
                 batch['coord'], batch['cell'], eval_bsize)
         pred = pred * gt_div + gt_sub
-        pred.clamp_(0, 1)
+        # pred.clamp_(0, 1)
+        pred = paddle.clip(pred, min=0, max=1)
 
         if eval_type is not None: # reshape for shaving-eval
             ih, iw = batch['inp'].shape[-2:]
@@ -111,7 +112,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    os.environ['CUDA_VISIBLE_DEVICES'] = ""
+    # os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -119,8 +120,10 @@ if __name__ == '__main__':
     spec = config['test_dataset']
     dataset = datasets.make(spec['dataset'])
     dataset = datasets.make(spec['wrapper'], args={'dataset': dataset})
+    # loader = DataLoader(dataset, batch_size=spec['batch_size'],
+    #     num_workers=8, pin_memory=True)
     loader = DataLoader(dataset, batch_size=spec['batch_size'],
-        num_workers=8, pin_memory=True)
+        num_workers=0)
 
     # model_spec = torch.load(args.model)['model']
     # model = models.make(model_spec, load_sd=True).to(device)

@@ -9,6 +9,7 @@ import models
 from models import register
 from utils import make_coord
 
+
 # device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 @register('liif')
@@ -20,19 +21,22 @@ class LIIF(nn.Layer):
         self.local_ensemble = local_ensemble
         self.feat_unfold = feat_unfold
         self.cell_decode = cell_decode
-
+        # print('encoder_spec:')
+        # print(encoder_spec)
         self.encoder = models.make(encoder_spec)
-
         if imnet_spec is not None:
             imnet_in_dim = self.encoder.out_dim
             if self.feat_unfold:
                 imnet_in_dim *= 9
-            imnet_in_dim += 2 # attach coord
+            imnet_in_dim += 2  # attach coord
             if self.cell_decode:
                 imnet_in_dim += 2
             self.imnet = models.make(imnet_spec, args={'in_dim': imnet_in_dim})
         else:
             self.imnet = None
+
+        # print('imnet:')
+        # print(self.imnet)
 
     def gen_feat(self, inp):
         self.feat = self.encoder(inp)
@@ -47,12 +51,15 @@ class LIIF(nn.Layer):
             #     .permute(0, 2, 1)
             ret = F.grid_sample(feat, coord.flip(-1).unsqueeze(1),
                                 mode='nearest', align_corners=False)[:, :, 0, :].transpose(perm=[0, 2, 1])
+
             return ret
 
         if self.feat_unfold:
             # feat = F.unfold(feat, 3, padding=1).view(
             #     feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3])
-            feat = F.unfold(feat, 3, paddings=1).reshape([feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3]])
+
+            feat = F.unfold(feat, 3, paddings=1).reshape(
+                [feat.shape[0], feat.shape[1] * 9, feat.shape[2], feat.shape[3]])
 
         if self.local_ensemble:
             vx_lst = [-1, 1]
@@ -68,10 +75,12 @@ class LIIF(nn.Layer):
         # feat_coord = make_coord(feat.shape[-2:], flatten=False).to(device) \
         #     .permute(2, 0, 1) \
         #     .unsqueeze(0).expand(feat.shape[0], 2, *feat.shape[-2:])
+
         feat_coord = make_coord(feat.shape[-2:], flatten=False) \
             .transpose(perm=[2, 0, 1]) \
-            .unsqueeze(0).expand(feat.shape[0], 2, *feat.shape[-2:])
-
+            .unsqueeze(0).expand([feat.shape[0], 2, *feat.shape[-2:]])
+        # print('=== feat_coord ====')
+        # print(feat_coord)
         preds = []
         areas = []
         for vx in vx_lst:
@@ -79,15 +88,27 @@ class LIIF(nn.Layer):
                 coord_ = coord.clone()
                 coord_[:, :, 0] += vx * rx + eps_shift
                 coord_[:, :, 1] += vy * ry + eps_shift
-                coord_.clamp_(-1 + 1e-6, 1 - 1e-6)
+                # coord_.clamp_(-1 + 1e-6, 1 - 1e-6)
+                clip_min = -1 + 1e-6
+                clip_max = 1 - 1e-6
+                coord_ = paddle.clip(coord_, min=clip_min, max=clip_max)
+
+                # q_feat = F.grid_sample(
+                #     feat, coord_.flip(-1).unsqueeze(1),
+                #     mode='nearest', align_corners=False)[:, :, 0, :] \
+                #     .permute(0, 2, 1)
                 q_feat = F.grid_sample(
                     feat, coord_.flip(-1).unsqueeze(1),
                     mode='nearest', align_corners=False)[:, :, 0, :] \
-                    .permute(0, 2, 1)
+                    .transpose(perm=[0, 2, 1])
+                # q_coord = F.grid_sample(
+                #     feat_coord, coord_.flip(-1).unsqueeze(1),
+                #     mode='nearest', align_corners=False)[:, :, 0, :] \
+                #     .permute(0, 2, 1)
                 q_coord = F.grid_sample(
                     feat_coord, coord_.flip(-1).unsqueeze(1),
                     mode='nearest', align_corners=False)[:, :, 0, :] \
-                    .permute(0, 2, 1)
+                    .transpose(perm=[0, 2, 1])
                 rel_coord = coord - q_coord
                 rel_coord[:, :, 0] *= feat.shape[-2]
                 rel_coord[:, :, 1] *= feat.shape[-1]
@@ -111,15 +132,21 @@ class LIIF(nn.Layer):
                 areas.append(area + 1e-9)
 
         # tot_area = torch.stack(areas).sum(dim=0)
-        tot_area = paddle.stack(areas).sum(dim=0)
+        tot_area = paddle.stack(areas).sum(axis=0)
         if self.local_ensemble:
-            t = areas[0]; areas[0] = areas[3]; areas[3] = t
-            t = areas[1]; areas[1] = areas[2]; areas[2] = t
+            t = areas[0];
+            areas[0] = areas[3];
+            areas[3] = t
+            t = areas[1];
+            areas[1] = areas[2];
+            areas[2] = t
         ret = 0
         for pred, area in zip(preds, areas):
             ret = ret + pred * (area / tot_area).unsqueeze(-1)
+
         return ret
 
     def forward(self, inp, coord, cell):
         self.gen_feat(inp)
+
         return self.query_rgb(coord, cell)
