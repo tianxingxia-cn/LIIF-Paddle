@@ -14,6 +14,9 @@ import datasets
 import models
 import utils
 
+import warnings
+warnings.filterwarnings('ignore')
+
 # device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
 def batched_predict(model, inp, coord, cell, bsize):
@@ -92,8 +95,8 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
             #     .permute(0, 3, 1, 2).contiguous()
             # batch['gt'] = batch['gt'].view(*shape) \
             #     .permute(0, 3, 1, 2).contiguous()
-            pred = pred.reshape(*shape, perm=[0, 3, 1, 2])
-            batch['gt'] = batch['gt'].reshape(*shape,  perm=[0, 3, 1, 2])
+            pred = pred.reshape([*shape]).transpose(perm=[0, 3, 1, 2])
+            batch['gt'] = batch['gt'].reshape([*shape]).transpose(perm=[0, 3, 1, 2])
 
         res = metric_fn(pred, batch['gt'])
         val_res.add(res.item(), inp.shape[0])

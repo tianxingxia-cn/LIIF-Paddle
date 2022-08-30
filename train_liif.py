@@ -23,25 +23,25 @@
 
 import argparse
 import os
-
-import paddle  # import torch
-import paddle.nn as nn  # import torch.nn as nn
 import yaml
-from paddle.io import DataLoader  # from torch.utils.data import DataLoader
+import paddle   # import torch
+import paddle.nn as nn  # import torch.nn as nn
 from tqdm import tqdm
-
+from paddle.io import DataLoader    # from torch.utils.data import DataLoader
+# from torch.optim.lr_scheduler import MultiStepLR
 import datasets
 import models
 import utils
 from test import eval_psnr
-# from torch.optim.lr_scheduler import MultiStepLR
+
+import warnings
+warnings.filterwarnings('ignore')
 
 # device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 device = paddle.get_device()
 # print(device)
-os.environ['CUDA_VISIBLE_DEVICES'] = device.replace('gpu:', '')
+os.environ['CUDA_VISIBLE_DEVICES'] = device.replace('gpu:','')
 # os.environ["OMP_NUM_THREADS"] = "1"
-
 def make_data_loader(spec, tag=''):
     if spec is None:
         return None
@@ -59,7 +59,7 @@ def make_data_loader(spec, tag=''):
     # loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=(tag == 'train'), num_workers=8, pin_memory=True)
     # loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=(tag == 'train'), num_workers=4, pin_memory=True)
     # loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=(tag == 'train'), num_workers=0, use_shared_memory=True)
-    loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=False, num_workers=0, use_shared_memory=True)
+    loader = DataLoader(dataset, batch_size=spec['batch_size'], shuffle=False, num_workers=0,use_shared_memory=True)
     return loader
 
 
@@ -73,7 +73,7 @@ def prepare_training():
     print('resume config:')
     print(config.get('resume'))
     if config.get('resume') is not None and os.path.exists(config['resume']):
-        sv_file = paddle.load(config['resume'])  # sv_file = torch.load(config['resume'])
+        sv_file = paddle.load(config['resume'])     # sv_file = torch.load(config['resume'])
         # model = models.make(sv_file['model'], load_sd=True).to(device)
         model = models.make(sv_file['model'], load_sd=True)
         optimizer = utils.make_optimizer(
@@ -86,9 +86,7 @@ def prepare_training():
         else:
             # lr_scheduler = MultiStepLR(optimizer, **config['multi_step_lr'])
             multi_step_lr = config['multi_step_lr']
-            lr_scheduler = paddle.optimizer.lr.MultiStepDecay(learning_rate=config['optimizer']['args']['lr'],
-                                                              milestones=multi_step_lr['milestones'],
-                                                              gamma=multi_step_lr['gamma'], verbose=True)
+            lr_scheduler = paddle.optimizer.lr.MultiStepDecay(learning_rate=config['optimizer']['args']['lr'],milestones=multi_step_lr['milestones'],gamma=multi_step_lr['gamma'], verbose=True)
         for _ in range(epoch_start - 1):
             lr_scheduler.step()
     else:
@@ -140,7 +138,7 @@ def train(train_loader, model, optimizer):
         # print(batch['coord'])
         # print("cell\n")
         # print(batch['cell'])
-        pred = model(inp, batch['coord'], batch['cell'])  # rel: paddle.Model(net, input, label)
+        pred = model(inp, batch['coord'], batch['cell'])        #rel: paddle.Model(net, input, label)
         gt = (batch['gt'] - gt_sub) / gt_div
         loss = loss_fn(pred, gt)
 
@@ -194,7 +192,7 @@ def main(config_, save_path):
         # print(optimizer)
         # writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)   # todo 本行未优化
         # writer.add_scalar('lr', optimizer.get_lr(), epoch)
-        writer.add_scalar(tag='train/lr', value=optimizer.get_lr(), step=epoch)
+        writer.add_scalar(tag='train/lr', value=optimizer.get_lr(), step = epoch)
 
         train_loss = train(train_loader, model, optimizer)
 
@@ -202,7 +200,7 @@ def main(config_, save_path):
             lr_scheduler.step()
 
         log_info.append('train: loss={:.4f}'.format(train_loss))
-        # writer.add_scalars('loss', {'train': train_loss}, epoch)
+        #writer.add_scalars('loss', {'train': train_loss}, epoch)
         writer.add_scalar(tag='train/train_loss', value=train_loss, step=epoch)
 
         if n_gpus > 1:
@@ -232,9 +230,9 @@ def main(config_, save_path):
             else:
                 model_ = model
             val_res = eval_psnr(val_loader, model_,
-                                data_norm=config['data_norm'],
-                                eval_type=config.get('eval_type'),
-                                eval_bsize=config.get('eval_bsize'))
+                data_norm=config['data_norm'],
+                eval_type=config.get('eval_type'),
+                eval_bsize=config.get('eval_bsize'))
 
             log_info.append('val: psnr={:.4f}'.format(val_res))
             # writer.add_scalars('psnr', {'val': val_res}, epoch)

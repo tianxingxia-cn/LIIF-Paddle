@@ -96,18 +96,11 @@ def resize_fn(img, size):
     # return transforms.ToTensor()(
     #     transforms.Resize(size, Image.BICUBIC)(
     #         transforms.ToPILImage()(img)))
-    # img = img.numpy()
-    # a = img.numpy()
-    # print(a)
-    # b = np.uint8(a * 255)
-    # print(b)
-    # c = b.transpose(1, 2, 0)
-    # print(c)
-    # d = Image.fromarray(c).convert('RGB')
-    # pil_img = d
-
     pil_img = Image.fromarray(np.uint8(img.numpy() * 255).transpose(1, 2, 0)).convert('RGB')
-    pil_img_resize = pil_img.resize((size, size))
+    if isinstance(size, tuple) or isinstance(size, list):
+        pil_img_resize = pil_img.resize(size)
+    else:
+        pil_img_resize = pil_img.resize((size, size))
     # pil_img_resize.show()
     return paddle.vision.transforms.ToTensor(data_format='CHW')(pil_img_resize)
 
@@ -171,8 +164,8 @@ class SRImplicitDownsampled(Dataset):
                     # print('x.shape')
                     # print(x.shape)
                     # x = x.transpose(-2, -1)  # torch.Size([3, 48, 48])
-                    paddle.transpose(img, perm=[0, 2, 1])
-
+                    # x = paddle.transpose(x, perm=[0, 2, 1])
+                    x = x.transpose(perm=[0, 2, 1])
                     # print("x:")
                     # print(x)
                 return x
@@ -257,10 +250,10 @@ class SRImplicitUniformVaried(Dataset):
             # sample_lst=[] #todo 临时测试
             # for k in range(self.sample_q):  #todo 临时测试
             #     sample_lst.append(k)
-            # hr_coord = hr_coord[sample_lst]
-            hr_coord = hr_coord.gather(paddle.to_tensor(sample_lst))
-            # hr_rgb = hr_rgb[sample_lst]
-            hr_rgb = hr_rgb.gather(paddle.to_tensor(sample_lst))
+            hr_coord = hr_coord[sample_lst]
+            # hr_coord = hr_coord.gather(paddle.to_tensor(sample_lst))
+            hr_rgb = hr_rgb[sample_lst]
+            # hr_rgb = hr_rgb.gather(paddle.to_tensor(sample_lst))
 
         # cell = torch.ones_like(hr_coord)
         cell = paddle.ones_like(hr_coord)
